@@ -1,4 +1,4 @@
-/* Copyright (c) 2012, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012, Code Aurora Forum. All rights reserved.
 *
 * This program is free software; you can redistribute it and/or modify
 * it under the terms of the GNU General Public License version 2 and
@@ -74,7 +74,6 @@ struct venc_msg_ops {
 #define FREE_OUTPUT_BUFFER _IOWR('V', 21, struct mem_region *)
 #define FREE_INPUT_BUFFER _IOWR('V', 22, struct mem_region *)
 #define FREE_RECON_BUFFERS _IO('V', 23)
-#define ENCODE_FLUSH _IO('V', 24)
 
 extern int venc_init(struct v4l2_subdev *sd, u32 val);
 extern int venc_load_fw(struct v4l2_subdev *sd);

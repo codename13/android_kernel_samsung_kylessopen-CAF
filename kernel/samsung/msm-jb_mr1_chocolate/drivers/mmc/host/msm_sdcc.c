@@ -3,7 +3,7 @@
  *
  *  Copyright (C) 2007 Google Inc,
  *  Copyright (C) 2003 Deep Blue Solutions, Ltd, All Rights Reserved.
- *  Copyright (c) 2009-2012, The Linux Foundation. All rights reserved.
+ *  Copyright (c) 2009-2012, Code Aurora Forum. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -1191,11 +1191,9 @@ msmsdcc_data_err(struct msmsdcc_host *host, struct mmc_data *data,
 		 */
 		if (!(data->mrq->cmd->opcode == MMC_BUS_TEST_W
 			|| data->mrq->cmd->opcode == MMC_BUS_TEST_R)) {
-			pr_err("%s: CMD%d: Data timeout. DAT0 => %d\n",
+			pr_err("%s: CMD%d: Data timeout\n",
 				 mmc_hostname(host->mmc),
-				 data->mrq->cmd->opcode,
-				 (readl_relaxed(host->base
-				 + MCI_TEST_INPUT) & 0x2) ? 1 : 0);
+				 data->mrq->cmd->opcode);
 			data->error = -ETIMEDOUT;
 			msmsdcc_dump_sdcc_state(host);
 		}
@@ -4132,35 +4130,6 @@ store_sdcc_to_mem_max_bus_bw(struct device *dev, struct device_attribute *attr,
 	return count;
 }
 
-static ssize_t
-show_idle_timeout(struct device *dev, struct device_attribute *attr,
-		char *buf)
-{
-	struct mmc_host *mmc = dev_get_drvdata(dev);
-	struct msmsdcc_host *host = mmc_priv(mmc);
-
-	return snprintf(buf, PAGE_SIZE, "%u (Min 5 sec)\n",
-		host->idle_tout_ms / 1000);
-}
-
-static ssize_t
-store_idle_timeout(struct device *dev, struct device_attribute *attr,
-		const char *buf, size_t count)
-{
-	struct mmc_host *mmc = dev_get_drvdata(dev);
-	struct msmsdcc_host *host = mmc_priv(mmc);
-	unsigned int long flags;
-	int timeout; /* in secs */
-
-	if (!kstrtou32(buf, 0, &timeout)
-			&& (timeout > MSM_MMC_DEFAULT_IDLE_TIMEOUT / 1000)) {
-		spin_lock_irqsave(&host->lock, flags);
-		host->idle_tout_ms = timeout * 1000;
-		spin_unlock_irqrestore(&host->lock, flags);
-	}
-	return count;
-}
-
 #ifdef CONFIG_HAS_EARLYSUSPEND
 static void msmsdcc_early_suspend(struct early_suspend *h)
 {
@@ -4403,6 +4372,29 @@ err:
 	return NULL;
 }
 
+/* SYSFS about SD Card Detection by soonil.lim */
+
+static struct device *t_flash_detect_dev;
+
+static ssize_t t_flash_detect_show(struct device *dev,
+				   struct device_attribute *attr, char *buf)
+{
+	struct mmc_host *mmc = dev_get_drvdata(dev);
+	struct msmsdcc_host *host = mmc_priv(mmc);
+	unsigned int detect;
+	printk(KERN_ERR "%s : enter in sdc%d\n", __func__, host->pdev_id);
+	detect = host->plat->status(mmc_dev(host->mmc));
+	if (detect) {
+		printk(KERN_DEBUG "sdcc1: card inserted.\n");
+		return sprintf(buf, "Insert\n");
+	} else {
+		printk(KERN_DEBUG "sdcc1: card removed.\n");
+		return sprintf(buf, "Remove\n");
+	}
+}
+
+static DEVICE_ATTR(status, 0444, t_flash_detect_show, NULL);
+
 static int
 msmsdcc_probe(struct platform_device *pdev)
 {
@@ -4419,7 +4411,6 @@ msmsdcc_probe(struct platform_device *pdev)
 	struct resource *dma_crci_res = NULL;
 	int ret = 0;
 	int i;
-
 	if (pdev->dev.of_node) {
 		plat = msmsdcc_populate_pdata(&pdev->dev);
 		of_property_read_u32((&pdev->dev)->of_node,
@@ -4815,6 +4806,23 @@ msmsdcc_probe(struct platform_device *pdev)
 		pr_err("%s: No card detect facilities available\n",
 		       mmc_hostname(mmc));
 
+/* SYSFS about SD Card Detection by soonil.lim */
+	if (t_flash_detect_dev == NULL && (host->pdev_id == 1)) {
+		printk(KERN_ERR "MAKE SYSFS\n");
+		printk(KERN_DEBUG "%s : Change sysfs Card Detect\n", __func__);
+
+		t_flash_detect_dev = device_create(sec_class,
+			NULL, 0, NULL, "sdcard");
+		if (IS_ERR(t_flash_detect_dev))
+			pr_err("%s : Failed to create device!\n", __func__);
+
+		if (device_create_file(t_flash_detect_dev,
+			&dev_attr_status) < 0)
+			pr_err("%s : Failed to create device file(%s)!\n",
+			       __func__, dev_attr_status.attr.name);
+
+		dev_set_drvdata(t_flash_detect_dev, mmc);
+	}
 	mmc_set_drvdata(pdev, mmc);
 
 	ret = pm_runtime_set_active(&(pdev)->dev);
@@ -4854,7 +4862,6 @@ msmsdcc_probe(struct platform_device *pdev)
 #ifndef CONFIG_PM_RUNTIME
 	mmc_set_disable_delay(mmc, MSM_MMC_DISABLE_TIMEOUT);
 #endif
-	host->idle_tout_ms = MSM_MMC_DEFAULT_IDLE_TIMEOUT;
 	setup_timer(&host->req_tout_timer, msmsdcc_req_tout_timer_hdlr,
 			(unsigned long)host);
 
@@ -4923,19 +4930,8 @@ msmsdcc_probe(struct platform_device *pdev)
 		if (ret)
 			goto remove_max_bus_bw_file;
 	}
-	host->idle_timeout.show = show_idle_timeout;
-	host->idle_timeout.store = store_idle_timeout;
-	sysfs_attr_init(&host->idle_timeout.attr);
-	host->idle_timeout.attr.name = "idle_timeout";
-	host->idle_timeout.attr.mode = S_IRUGO | S_IWUSR;
-	ret = device_create_file(&pdev->dev, &host->idle_timeout);
-	if (ret)
-		goto remove_polling_file;
 	return 0;
 
- remove_polling_file:
-	if (!plat->status_irq)
-		device_remove_file(&pdev->dev, &host->polling);
  remove_max_bus_bw_file:
 	device_remove_file(&pdev->dev, &host->max_bus_bw);
  platform_irq_free:
@@ -5017,7 +5013,6 @@ static int msmsdcc_remove(struct platform_device *pdev)
 	device_remove_file(&pdev->dev, &host->max_bus_bw);
 	if (!plat->status_irq)
 		device_remove_file(&pdev->dev, &host->polling);
-	device_remove_file(&pdev->dev, &host->idle_timeout);
 
 	del_timer_sync(&host->req_tout_timer);
 	tasklet_kill(&host->dma_tlet);
@@ -5233,6 +5228,46 @@ msmsdcc_runtime_resume(struct device *dev)
 	if (host->plat->is_sdio_al_client)
 		return 0;
 
+	if (host->pdev_id == 2) {
+		printk(KERN_INFO "SDCC CH 2 : msmsdcc_runtime_suspend WLAN SKIP Suspend\n");
+
+		spin_lock_irqsave(&host->lock, flags);
+		writel(0, host->base + MMCIMASK0);
+
+		if (host->clks_on) {
+			clk_disable(host->clk);
+
+			if (!IS_ERR(host->pclk))
+				clk_disable(host->pclk);
+
+			host->clks_on = 0;
+		}
+		spin_unlock_irqrestore(&host->lock, flags);
+
+		return 0;
+	}
+
+	if (host->pdev_id == 2) {
+		printk(KERN_INFO "SDCC CH 2 : msmsdcc_runtime_resume WLAN SKIP Resume\n");
+
+		spin_lock_irqsave(&host->lock, flags);
+
+		if (!host->clks_on) {
+			if (!IS_ERR_OR_NULL(host->dfab_pclk))
+				clk_enable(host->dfab_pclk);
+
+			if (!IS_ERR(host->pclk))
+				clk_enable(host->pclk);
+
+			clk_enable(host->clk);
+			host->clks_on = 1;
+		}
+		writel(host->mci_irqenable, host->base + MMCIMASK0);
+		spin_unlock_irqrestore(&host->lock, flags);
+
+		return 0;
+	}
+
 	pr_debug("%s: %s: start\n", mmc_hostname(mmc), __func__);
 	if (mmc) {
 		if (mmc->card && mmc_card_sdio(mmc->card) &&
@@ -5280,7 +5315,7 @@ static int msmsdcc_runtime_idle(struct device *dev)
 		return 0;
 
 	/* Idle timeout is not configurable for now */
-	pm_schedule_suspend(dev, host->idle_tout_ms);
+	pm_schedule_suspend(dev, MSM_MMC_IDLE_TIMEOUT);
 
 	return -EAGAIN;
 }

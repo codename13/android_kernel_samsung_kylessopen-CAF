@@ -1,4 +1,4 @@
-/* Copyright (c) 2011-2012, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2011-2012, Code Aurora Forum. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -1862,6 +1862,12 @@ static irqreturn_t usbin_ov_irq_handler(int irq, void *data)
 	return IRQ_HANDLED;
 }
 
+static irqreturn_t usbin_ov_irq_handler(int irq, void *data)
+{
+	pr_err("USB OverVoltage\n");
+	return IRQ_HANDLED;
+}
+
 static irqreturn_t batt_inserted_irq_handler(int irq, void *data)
 {
 	struct pm8921_chg_chip *chip = data;
@@ -1903,6 +1909,12 @@ static irqreturn_t vbatdet_low_irq_handler(int irq, void *data)
 	power_supply_changed(&chip->usb_psy);
 	power_supply_changed(&chip->dc_psy);
 
+	return IRQ_HANDLED;
+}
+
+static irqreturn_t usbin_uv_irq_handler(int irq, void *data)
+{
+	pr_err("USB UnderVoltage\n");
 	return IRQ_HANDLED;
 }
 

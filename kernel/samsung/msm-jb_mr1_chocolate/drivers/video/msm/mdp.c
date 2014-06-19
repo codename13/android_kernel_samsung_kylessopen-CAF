@@ -91,7 +91,6 @@ struct workqueue_struct *mdp_dma_wq;	/*mdp dma wq */
 struct workqueue_struct *mdp_vsync_wq;	/*mdp vsync wq */
 
 struct workqueue_struct *mdp_hist_wq;	/*mdp histogram wq */
-bool mdp_pp_initialized = FALSE;
 
 static struct workqueue_struct *mdp_pipe_ctrl_wq; /* mdp mdp pipe ctrl wq */
 static struct delayed_work mdp_pipe_ctrl_worker;
@@ -223,28 +222,10 @@ static void mdp_hist_lut_init_mgmt(struct mdp_hist_lut_mgmt *mgmt,
 	mutex_unlock(&mdp_hist_lut_list_mutex);
 }
 
-static int mdp_hist_lut_destroy(void)
-{
-	struct mdp_hist_lut_mgmt *temp;
-	struct list_head *pos, *q;
-
-	mutex_lock(&mdp_hist_lut_list_mutex);
-	list_for_each_safe(pos, q, &mdp_hist_lut_list) {
-		temp = list_entry(pos, struct mdp_hist_lut_mgmt, list);
-		list_del(pos);
-		kfree(temp);
-	}
-	mutex_unlock(&mdp_hist_lut_list_mutex);
-	return 0;
-}
-
 static int mdp_hist_lut_init(void)
 {
 	struct mdp_hist_lut_mgmt *temp;
-
-	if (mdp_pp_initialized)
-		return -EEXIST;
-
+	struct list_head *pos, *q;
 	INIT_LIST_HEAD(&mdp_hist_lut_list);
 
 	if (mdp_rev >= MDP_REV_30) {
@@ -275,7 +256,13 @@ static int mdp_hist_lut_init(void)
 	return 0;
 
 exit_list:
-	mdp_hist_lut_destroy();
+	mutex_lock(&mdp_hist_lut_list_mutex);
+	list_for_each_safe(pos, q, &mdp_hist_lut_list) {
+		temp = list_entry(pos, struct mdp_hist_lut_mgmt, list);
+		list_del(pos);
+		kfree(temp);
+	}
+	mutex_unlock(&mdp_hist_lut_list_mutex);
 exit:
 	pr_err("Failed initializing histogram LUT memory\n");
 	return -ENOMEM;
@@ -711,30 +698,10 @@ static void mdp_hist_del_mgmt(struct mdp_hist_mgmt *mgmt)
 	kfree(mgmt->c0);
 }
 
-static int mdp_histogram_destroy(void)
-{
-	struct mdp_hist_mgmt *temp;
-	int i;
-
-	for (i = 0; i < MDP_HIST_MGMT_MAX; i++) {
-		temp = mdp_hist_mgmt_array[i];
-		if (!temp)
-			continue;
-		mdp_hist_del_mgmt(temp);
-		kfree(temp);
-		mdp_hist_mgmt_array[i] = NULL;
-	}
-	return 0;
-}
-
 static int mdp_histogram_init(void)
 {
 	struct mdp_hist_mgmt *temp;
 	int i, ret;
-
-	if (mdp_pp_initialized)
-		return -EEXIST;
-
 	mdp_hist_wq = alloc_workqueue("mdp_hist_wq",
 					WQ_NON_REENTRANT | WQ_UNBOUND, 0);
 
@@ -780,7 +747,14 @@ static int mdp_histogram_init(void)
 	return 0;
 
 exit_list:
-	mdp_histogram_destroy();
+	for (i = 0; i < MDP_HIST_MGMT_MAX; i++) {
+		temp = mdp_hist_mgmt_array[i];
+		if (!temp)
+			continue;
+		mdp_hist_del_mgmt(temp);
+		kfree(temp);
+		mdp_hist_mgmt_array[i] = NULL;
+	}
 exit:
 	return -ENOMEM;
 }
@@ -964,7 +938,6 @@ int mdp_histogram_start(struct mdp_histogram_start_req *req)
 		goto error;
 	}
 
-	mutex_lock(&mgmt->mdp_do_hist_mutex);
 	mutex_lock(&mgmt->mdp_hist_mutex);
 	if (mgmt->mdp_is_hist_start == TRUE) {
 		pr_err("%s histogram already started\n", __func__);
@@ -984,7 +957,6 @@ int mdp_histogram_start(struct mdp_histogram_start_req *req)
 
 error_lock:
 	mutex_unlock(&mgmt->mdp_hist_mutex);
-	mutex_unlock(&mgmt->mdp_do_hist_mutex);
 error:
 	return ret;
 }
@@ -1001,7 +973,6 @@ int mdp_histogram_stop(struct fb_info *info, uint32_t block)
 		goto error;
 	}
 
-	mutex_lock(&mgmt->mdp_do_hist_mutex);
 	mutex_lock(&mgmt->mdp_hist_mutex);
 	if (mgmt->mdp_is_hist_start == FALSE) {
 		pr_err("%s histogram already stopped\n", __func__);
@@ -1024,12 +995,10 @@ int mdp_histogram_stop(struct fb_info *info, uint32_t block)
 
 	mutex_unlock(&mgmt->mdp_hist_mutex);
 	cancel_work_sync(&mgmt->mdp_histogram_worker);
-	mutex_unlock(&mgmt->mdp_do_hist_mutex);
 	return ret;
 
 error_lock:
 	mutex_unlock(&mgmt->mdp_hist_mutex);
-	mutex_unlock(&mgmt->mdp_do_hist_mutex);
 error:
 	return ret;
 }
@@ -1212,7 +1181,7 @@ error:
 static int _mdp_copy_hist_data(struct mdp_histogram_data *hist,
 						struct mdp_hist_mgmt *mgmt)
 {
-	int ret;
+	int ret = 0;
 
 	if (hist->c0) {
 		ret = copy_to_user(hist->c0, mgmt->c0,
@@ -1242,13 +1211,11 @@ err:
 	return ret;
 }
 
-#define MDP_HISTOGRAM_TIMEOUT_MS	84 /*5 Frames*/
 static int mdp_do_histogram(struct fb_info *info,
 					struct mdp_histogram_data *hist)
 {
 	struct mdp_hist_mgmt *mgmt = NULL;
 	int ret = 0;
-	unsigned long timeout = (MDP_HISTOGRAM_TIMEOUT_MS * HZ) / 1000;
 
 	ret = mdp_histogram_block2mgmt(hist->block, &mgmt);
 	if (ret) {
@@ -1290,21 +1257,12 @@ static int mdp_do_histogram(struct fb_info *info,
 		ret = -EPERM;
 		goto error_lock;
 	}
-	INIT_COMPLETION(mgmt->mdp_hist_comp);
 	mgmt->hist = hist;
 	mutex_unlock(&mgmt->mdp_hist_mutex);
 
-	ret = wait_for_completion_killable_timeout(&mgmt->mdp_hist_comp,
-								timeout);
-	if (ret <= 0) {
-		if (!ret) {
-			mgmt->hist = NULL;
-			ret = -ETIMEDOUT;
-			pr_debug("%s: bin collection timedout", __func__);
-		} else {
-			mgmt->hist = NULL;
-			pr_debug("%s: bin collection interrupted", __func__);
-		}
+	if (wait_for_completion_killable(&mgmt->mdp_hist_comp)) {
+		pr_err("%s(): histogram bin collection killed", __func__);
+		ret = -EINVAL;
 		goto error;
 	}
 
@@ -2398,7 +2356,7 @@ static int mdp_probe(struct platform_device *pdev)
 
 		mdp_rev = mdp_pdata->mdp_rev;
 
-		rc = mdp_irq_clk_setup(pdev, mdp_pdata->cont_splash_enabled);
+		rc = mdp_irq_clk_setup(mdp_pdata->cont_splash_enabled);
 
 		if (rc)
 			return rc;
@@ -2477,7 +2435,6 @@ static int mdp_probe(struct platform_device *pdev)
 	/* initialize Post Processing data*/
 	mdp_hist_lut_init();
 	mdp_histogram_init();
-	mdp_pp_initialized = TRUE;
 
 	/* add panel data */
 	if (platform_device_add_data
@@ -2857,9 +2814,6 @@ void mdp_footswitch_ctrl(boolean on)
 		return;
 	}
 
-	if (hdmi_pll_fs)
-		regulator_enable(hdmi_pll_fs);
-
 	if (on && !mdp_footswitch_on) {
 		pr_debug("Enable MDP FS\n");
 		regulator_enable(footswitch);
@@ -2869,9 +2823,6 @@ void mdp_footswitch_ctrl(boolean on)
 		regulator_disable(footswitch);
 		mdp_footswitch_on = 0;
 	}
-
-	if (hdmi_pll_fs)
-		regulator_disable(hdmi_pll_fs);
 
 	mutex_unlock(&mdp_suspend_mutex);
 }
@@ -2937,12 +2888,6 @@ static int mdp_remove(struct platform_device *pdev)
 {
 	if (footswitch != NULL)
 		regulator_put(footswitch);
-
-	/*free post processing memory*/
-	mdp_histogram_destroy();
-	mdp_hist_lut_destroy();
-	mdp_pp_initialized = FALSE;
-
 	iounmap(msm_mdp_base);
 	pm_runtime_disable(&pdev->dev);
 #ifdef CONFIG_MSM_BUS_SCALING

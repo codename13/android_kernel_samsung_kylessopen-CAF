@@ -119,6 +119,24 @@ void gpio_event_resume(struct early_suspend *h)
 }
 #endif
 
+#if defined(CONFIG_MACH_KYLE) || defined(CONFIG_MACH_AMAZING)
+#ifdef CONFIG_PM
+static int gpio_event_sleep(struct platform_device *pdev, pm_message_t state)
+{
+	struct gpio_event *ip = platform_get_drvdata(pdev);
+
+	return gpio_event_call_all_func(ip, GPIO_EVENT_FUNC_SUSPEND);
+}
+
+static int gpio_event_wakeup(struct platform_device *pdev)
+{
+	struct gpio_event *ip = platform_get_drvdata(pdev);
+
+	return gpio_event_call_all_func(ip, GPIO_EVENT_FUNC_RESUME);
+}
+#endif
+#endif
+
 static int gpio_event_probe(struct platform_device *pdev)
 {
 	int err;
@@ -192,7 +210,6 @@ static int gpio_event_probe(struct platform_device *pdev)
 		}
 		registered++;
 	}
-
 	return 0;
 
 err_input_register_device_failed:
@@ -240,6 +257,13 @@ static struct platform_driver gpio_event_driver = {
 	.driver		= {
 		.name	= GPIO_EVENT_DEV_NAME,
 	},
+
+#if defined(CONFIG_MACH_KYLE) || defined(CONFIG_MACH_AMAZING)
+#ifdef CONFIG_PM
+	.suspend	= gpio_event_sleep,
+	.resume		= gpio_event_wakeup,
+#endif
+#endif
 };
 
 static int __devinit gpio_event_init(void)

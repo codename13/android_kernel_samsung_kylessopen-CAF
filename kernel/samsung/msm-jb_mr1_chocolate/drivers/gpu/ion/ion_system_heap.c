@@ -26,12 +26,9 @@
 #include <mach/iommu_domains.h>
 #include "ion_priv.h"
 #include <mach/memory.h>
-#include <asm/cacheflush.h>
 
 static atomic_t system_heap_allocated;
 static atomic_t system_contig_heap_allocated;
-static unsigned int system_heap_has_outer_cache;
-static unsigned int system_heap_contig_has_outer_cache;
 
 static int ion_system_heap_allocate(struct ion_heap *heap,
 				     struct ion_buffer *buffer,
@@ -147,66 +144,44 @@ int ion_system_heap_cache_ops(struct ion_heap *heap, struct ion_buffer *buffer,
 			void *vaddr, unsigned int offset, unsigned int length,
 			unsigned int cmd)
 {
-	void (*outer_cache_op)(phys_addr_t, phys_addr_t);
+	unsigned long vstart, pstart;
+	void *vtemp;
+	unsigned long ln = 0;
+	void (*op)(unsigned long, unsigned long, unsigned long);
 
 	switch (cmd) {
 	case ION_IOC_CLEAN_CACHES:
-		dmac_clean_range(vaddr, vaddr + length);
-		outer_cache_op = outer_clean_range;
+		op = clean_caches;
 		break;
 	case ION_IOC_INV_CACHES:
-		dmac_inv_range(vaddr, vaddr + length);
-		outer_cache_op = outer_inv_range;
+		op = invalidate_caches;
 		break;
 	case ION_IOC_CLEAN_INV_CACHES:
-		dmac_flush_range(vaddr, vaddr + length);
-		outer_cache_op = outer_flush_range;
+		op = clean_and_invalidate_caches;
 		break;
 	default:
 		return -EINVAL;
 	}
 
-	if (system_heap_has_outer_cache) {
-		unsigned long pstart;
-		void *vend;
-		void *vtemp;
-		unsigned long ln = 0;
-		vend = buffer->priv_virt + buffer->size;
-		vtemp = buffer->priv_virt + offset;
-
-		if ((vtemp+length) > vend) {
-			pr_err("Trying to flush outside of mapped range.\n");
-			pr_err("End of mapped range: %p, trying to flush to "
-				"address %p\n", vend, vtemp+length);
-			WARN(1, "%s: called with heap name %s, buffer size 0x%x, "
-				"vaddr 0x%p, offset 0x%x, length: 0x%x\n",
-				__func__, heap->name, buffer->size, vaddr,
-				offset, length);
+	for (vtemp = buffer->priv_virt + offset,
+	     vstart = (unsigned long) vaddr;
+			ln < length;
+			vtemp += PAGE_SIZE, ln += PAGE_SIZE,
+			vstart += PAGE_SIZE) {
+		pstart = page_to_phys(vmalloc_to_page(vtemp));
+		/*
+		 * If vmalloc -> page -> phys is returning NULL, something
+		 * has really gone wrong...
+		 */
+		if (!pstart) {
+			WARN(1, "Could not translate %p to physical address\n",
+				vtemp);
 			return -EINVAL;
 		}
 
-		for (; ln < length && vtemp < vend;
-		      vtemp += PAGE_SIZE, ln += PAGE_SIZE) {
-			struct page *page = vmalloc_to_page(vtemp);
-			if (!page) {
-				WARN(1, "Could not find page for virt. address %p\n",
-					vtemp);
-				return -EINVAL;
-			}
-			pstart = page_to_phys(page);
-			/*
-			 * If page -> phys is returning NULL, something
-			 * has really gone wrong...
-			 */
-			if (!pstart) {
-				WARN(1, "Could not translate %p to physical address\n",
-					vtemp);
-				return -EINVAL;
-			}
-
-			outer_cache_op(pstart, pstart + PAGE_SIZE);
-		}
+		op(vstart, PAGE_SIZE, pstart);
 	}
+
 	return 0;
 }
 
@@ -320,7 +295,7 @@ static struct ion_heap_ops vmalloc_ops = {
 	.unmap_iommu = ion_system_heap_unmap_iommu,
 };
 
-struct ion_heap *ion_system_heap_create(struct ion_platform_heap *pheap)
+struct ion_heap *ion_system_heap_create(struct ion_platform_heap *unused)
 {
 	struct ion_heap *heap;
 
@@ -329,7 +304,6 @@ struct ion_heap *ion_system_heap_create(struct ion_platform_heap *pheap)
 		return ERR_PTR(-ENOMEM);
 	heap->ops = &vmalloc_ops;
 	heap->type = ION_HEAP_TYPE_SYSTEM;
-	system_heap_has_outer_cache = pheap->has_outer_cache;
 	return heap;
 }
 
@@ -401,36 +375,29 @@ int ion_system_contig_heap_cache_ops(struct ion_heap *heap,
 			unsigned int offset, unsigned int length,
 			unsigned int cmd)
 {
-	void (*outer_cache_op)(phys_addr_t, phys_addr_t);
+	unsigned long vstart, pstart;
 
-	switch (cmd) {
-	case ION_IOC_CLEAN_CACHES:
-		dmac_clean_range(vaddr, vaddr + length);
-		outer_cache_op = outer_clean_range;
-		break;
-	case ION_IOC_INV_CACHES:
-		dmac_inv_range(vaddr, vaddr + length);
-		outer_cache_op = outer_inv_range;
-		break;
-	case ION_IOC_CLEAN_INV_CACHES:
-		dmac_flush_range(vaddr, vaddr + length);
-		outer_cache_op = outer_flush_range;
-		break;
-	default:
+	pstart = virt_to_phys(buffer->priv_virt) + offset;
+	if (!pstart) {
+		WARN(1, "Could not do virt to phys translation on %p\n",
+			buffer->priv_virt);
 		return -EINVAL;
 	}
 
-	if (system_heap_contig_has_outer_cache) {
-		unsigned long pstart;
+	vstart = (unsigned long) vaddr;
 
-		pstart = virt_to_phys(buffer->priv_virt) + offset;
-		if (!pstart) {
-			WARN(1, "Could not do virt to phys translation on %p\n",
-				buffer->priv_virt);
-			return -EINVAL;
-		}
-
-		outer_cache_op(pstart, pstart + PAGE_SIZE);
+	switch (cmd) {
+	case ION_IOC_CLEAN_CACHES:
+		clean_caches(vstart, length, pstart);
+		break;
+	case ION_IOC_INV_CACHES:
+		invalidate_caches(vstart, length, pstart);
+		break;
+	case ION_IOC_CLEAN_INV_CACHES:
+		clean_and_invalidate_caches(vstart, length, pstart);
+		break;
+	default:
+		return -EINVAL;
 	}
 
 	return 0;
@@ -538,7 +505,7 @@ static struct ion_heap_ops kmalloc_ops = {
 	.unmap_iommu = ion_system_heap_unmap_iommu,
 };
 
-struct ion_heap *ion_system_contig_heap_create(struct ion_platform_heap *pheap)
+struct ion_heap *ion_system_contig_heap_create(struct ion_platform_heap *unused)
 {
 	struct ion_heap *heap;
 
@@ -547,7 +514,6 @@ struct ion_heap *ion_system_contig_heap_create(struct ion_platform_heap *pheap)
 		return ERR_PTR(-ENOMEM);
 	heap->ops = &kmalloc_ops;
 	heap->type = ION_HEAP_TYPE_SYSTEM_CONTIG;
-	system_heap_contig_has_outer_cache = pheap->has_outer_cache;
 	return heap;
 }
 

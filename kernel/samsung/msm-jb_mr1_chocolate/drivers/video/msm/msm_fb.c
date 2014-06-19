@@ -52,6 +52,17 @@
 #include "mdp.h"
 #include "mdp4.h"
 
+extern int charging_boot;
+#ifdef CONFIG_FB_MSM_LOGO
+#if defined(CONFIG_MACH_KYLE)
+#define INIT_IMAGE_FILE         "/initlogo.rle"
+#else
+#define INIT_IMAGE_FILE		"/GT-S7500.rle" /*"/initlogo.rle"*/
+#endif // End of CONFIG_FB_MSM_LOGO
+
+extern int load_565rle_image(char *filename, bool bf_supported);
+#endif
+
 #ifdef CONFIG_FB_MSM_TRIPLE_BUFFER
 #define MSM_FB_NUM	3
 #endif
@@ -264,6 +275,33 @@ int msm_fb_detect_client(const char *name)
 	return ret;
 }
 
+#ifdef CONFIG_APPLY_GA_SOLUTION
+/* Mark for GetLog */
+struct struct_frame_buf_mark {
+	u32 special_mark_1;
+	u32 special_mark_2;
+	u32 special_mark_3;
+	u32 special_mark_4;
+	void *p_fb;
+	u32 resX;
+	u32 resY;
+	u32 bpp;    //color depth : 16 or 24
+	u32 frames; // frame buffer count : 2
+};
+
+static struct struct_frame_buf_mark  frame_buf_mark = {
+	.special_mark_1 = (('*' << 24) | ('^' << 16) | ('^' << 8) | ('*' << 0)),
+	.special_mark_2 = (('I' << 24) | ('n' << 16) | ('f' << 8) | ('o' << 0)),
+	.special_mark_3 = (('H' << 24) | ('e' << 16) | ('r' << 8) | ('e' << 0)),
+	.special_mark_4 = (('f' << 24) | ('b' << 16) | ('u' << 8) | ('f' << 0)),
+	.p_fb   = 0,
+	.resX   = 320,
+	.resY   = 480,
+	.bpp    = 24,
+	.frames = 2
+};
+#endif
+
 static ssize_t msm_fb_msm_fb_type(struct device *dev,
 				  struct device_attribute *attr, char *buf)
 {
@@ -303,9 +341,6 @@ static ssize_t msm_fb_msm_fb_type(struct device *dev,
 		break;
 	case MIPI_CMD_PANEL:
 		ret = snprintf(buf, PAGE_SIZE, "mipi dsi cmd panel\n");
-		break;
-	case WRITEBACK_PANEL:
-		ret = snprintf(buf, PAGE_SIZE, "writeback panel\n");
 		break;
 	default:
 		ret = snprintf(buf, PAGE_SIZE, "unknown panel\n");
@@ -348,7 +383,6 @@ static int msm_fb_probe(struct platform_device *pdev)
 	struct msm_fb_data_type *mfd;
 	int rc;
 	int err = 0;
-
 	MSM_FB_DEBUG("msm_fb_probe\n");
 
 	if ((pdev->id == 0) && (pdev->num_resources > 0)) {
@@ -378,6 +412,11 @@ static int msm_fb_probe(struct platform_device *pdev)
 
 	if (!msm_fb_resource_initialized)
 		return -EPERM;
+
+#ifdef CONFIG_APPLY_GA_SOLUTION
+	/* Mark for GetLog */
+	frame_buf_mark.p_fb = fbram_phys;
+#endif
 
 	mfd = (struct msm_fb_data_type *)platform_get_drvdata(pdev);
 
@@ -619,6 +658,9 @@ static int msm_fb_resume_sub(struct msm_fb_data_type *mfd)
 				      mfd->op_enable);
 		if (ret)
 			MSM_FB_INFO("msm_fb_resume: can't turn on display!\n");
+	} else {
+		if (pdata->power_ctrl)
+			pdata->power_ctrl(TRUE);
 	}
 
 	mfd->suspend.op_suspend = false;
@@ -768,7 +810,7 @@ static void msmfb_early_suspend(struct early_suspend *h)
 {
 	struct msm_fb_data_type *mfd = container_of(h, struct msm_fb_data_type,
 						    early_suspend);
-#if defined(CONFIG_FB_MSM_MDP303)
+#if defined(CONFIG_FB_MSM_MDP303) && !defined CONFIG_DISABLE_HDMI_FB_CLEAR
 	/*
 	* For MDP with overlay, set framebuffer with black pixels
 	* to show black screen on HDMI.
@@ -935,6 +977,16 @@ static int msm_fb_blank_sub(int blank_mode, struct fb_info *info,
 	return ret;
 }
 
+static int msm_fb_count_yres_remainder(int line_length, int yres)
+{
+	int remainder = (line_length * yres) & (PAGE_SIZE - 1);
+					/* PAGE_SIZE is a power of 2 */
+	if (!remainder)
+		remainder = PAGE_SIZE;
+
+	return remainder;
+}
+
 int calc_fb_offset(struct msm_fb_data_type *mfd, struct fb_info *fbi, int bpp)
 {
 	struct msm_panel_info *panel_info = &mfd->panel_info;
@@ -942,14 +994,11 @@ int calc_fb_offset(struct msm_fb_data_type *mfd, struct fb_info *fbi, int bpp)
 
 	if (panel_info->mode2_yres != 0) {
 		yres = panel_info->mode2_yres;
-		remainder = (fbi->fix.line_length*yres) & (PAGE_SIZE - 1);
 	} else {
 		yres = panel_info->yres;
-		remainder = (fbi->fix.line_length*yres) & (PAGE_SIZE - 1);
 	}
 
-	if (!remainder)
-		remainder = PAGE_SIZE;
+	remainder = msm_fb_count_yres_remainder(fbi->fix.line_length, yres);
 
 	if (fbi->var.yoffset < yres) {
 		offset = (fbi->var.xoffset * bpp);
@@ -1314,14 +1363,11 @@ static int msm_fb_register(struct msm_fb_data_type *mfd)
 	/* Make sure all buffers can be addressed on a page boundary by an x
 	 * and y offset */
 
-	remainder = (fix->line_length * panel_info->yres) & (PAGE_SIZE - 1);
-					/* PAGE_SIZE is a power of 2 */
-	if (!remainder)
-		remainder = PAGE_SIZE;
-	remainder_mode2 = (fix->line_length *
-				panel_info->mode2_yres) & (PAGE_SIZE - 1);
-	if (!remainder_mode2)
-		remainder_mode2 = PAGE_SIZE;
+	remainder = msm_fb_count_yres_remainder(fix->line_length,
+						panel_info->yres);
+	remainder_mode2 = msm_fb_count_yres_remainder(fix->line_length,
+						      panel_info->mode2_yres);
+
 
 	/*
 	 * calculate smem_len based on max size of two supplied modes.
@@ -1965,7 +2011,8 @@ static int msm_fb_pan_display_sub(struct fb_var_screeninfo *var,
 	if (mfd->msmfb_no_update_notify_timer.function)
 		del_timer(&mfd->msmfb_no_update_notify_timer);
 
-	mfd->msmfb_no_update_notify_timer.expires = jiffies + (2 * HZ);
+	mfd->msmfb_no_update_notify_timer.expires =
+				jiffies + ((1000 * HZ) / 1000);
 	add_timer(&mfd->msmfb_no_update_notify_timer);
 	mutex_unlock(&msm_fb_notify_update_sem);
 
@@ -2204,6 +2251,15 @@ static int msm_fb_set_par(struct fb_info *info)
 	}
 	mfd->fbi->fix.line_length = msm_fb_line_length(mfd->index, var->xres,
 						       var->bits_per_pixel/8);
+
+	/* recompure var->yres_virtual to count in remainder part */
+	remainder = msm_fb_count_yres_remainder(mfd->fbi->fix.line_length,
+		var->yres);
+	fb_page = var->yres_virtual / var->yres;
+
+	var->yres_virtual = var->yres * fb_page +
+		((PAGE_SIZE - remainder) / mfd->fbi->fix.line_length) * fb_page;
+
 
 	if (blank) {
 		msm_fb_blank_sub(FB_BLANK_POWERDOWN, info, mfd->op_enable);
@@ -3182,7 +3238,8 @@ static int msmfb_overlay_play(struct fb_info *info, unsigned long *argp)
 	if (mfd->msmfb_no_update_notify_timer.function)
 		del_timer(&mfd->msmfb_no_update_notify_timer);
 
-	mfd->msmfb_no_update_notify_timer.expires = jiffies + (2 * HZ);
+	mfd->msmfb_no_update_notify_timer.expires =
+				jiffies + ((1000 * HZ) / 1000);
 	add_timer(&mfd->msmfb_no_update_notify_timer);
 	mutex_unlock(&msm_fb_notify_update_sem);
 
@@ -4176,7 +4233,7 @@ int get_fb_phys_info(unsigned long *start, unsigned long *len, int fb_num,
 	struct fb_info *info;
 	struct msm_fb_data_type *mfd;
 
-	if (fb_num > MAX_FBI_LIST ||
+	if (fb_num >= MAX_FBI_LIST ||
 		(subsys_id != DISPLAY_SUBSYSTEM_ID &&
 		 subsys_id != ROTATOR_SUBSYSTEM_ID)) {
 		pr_err("%s(): Invalid parameters\n", __func__);

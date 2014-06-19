@@ -1,4 +1,4 @@
-/* Copyright (c) 2011, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2011, Code Aurora Forum. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -339,9 +339,13 @@ int msm_camio_enable(struct platform_device *pdev)
 		(0x1 << MIPI_PHY_D0_CONTROL2_ERR_SOT_HS_EN_SHFT);
 	CDBG("%s MIPI_PHY_D0_CONTROL2 val=0x%x\n", __func__, val);
 	msm_io_w(val, csibase + MIPI_PHY_D0_CONTROL2);
+#if defined(CONFIG_MACH_KYLE)
 	msm_io_w(val, csibase + MIPI_PHY_D1_CONTROL2);
+#else
+	/*msm_io_w(val, csibase + MIPI_PHY_D1_CONTROL2);
 	msm_io_w(val, csibase + MIPI_PHY_D2_CONTROL2);
-	msm_io_w(val, csibase + MIPI_PHY_D3_CONTROL2);
+	msm_io_w(val, csibase + MIPI_PHY_D3_CONTROL2);*/
+#endif
 
 	val = (0x0F << MIPI_PHY_CL_CONTROL_HS_TERM_IMP_SHFT) |
 		(0x0 << MIPI_PHY_CL_CONTROL_LP_REC_EN_SHFT);
@@ -382,9 +386,13 @@ void msm_camio_disable(struct platform_device *pdev)
 		(0x1 << MIPI_PHY_D0_CONTROL2_ERR_SOT_HS_EN_SHFT);
 	CDBG("%s MIPI_PHY_D0_CONTROL2 val=0x%x\n", __func__, val);
 	msm_io_w(val, csibase + MIPI_PHY_D0_CONTROL2);
+#if defined(CONFIG_MACH_KYLE)
 	msm_io_w(val, csibase + MIPI_PHY_D1_CONTROL2);
+#else
+	/*msm_io_w(val, csibase + MIPI_PHY_D1_CONTROL2);
 	msm_io_w(val, csibase + MIPI_PHY_D2_CONTROL2);
-	msm_io_w(val, csibase + MIPI_PHY_D3_CONTROL2);
+	msm_io_w(val, csibase + MIPI_PHY_D3_CONTROL2);*/
+#endif
 
 	val = (0x0F << MIPI_PHY_CL_CONTROL_HS_TERM_IMP_SHFT) |
 		(0x0 << MIPI_PHY_CL_CONTROL_LP_REC_EN_SHFT);
@@ -418,15 +426,30 @@ int msm_camio_sensor_clk_on(struct platform_device *pdev)
 	rc = camdev->camera_gpio_on();
 	if (rc < 0)
 		return rc;
+	
+#if defined(CONFIG_MACH_AMAZING) || defined(CONFIG_MACH_AMAZING_CDMA)|| defined(CONFIG_MACH_KYLE) && !defined(CONFIG_MACH_KYLE_I)
+	return rc;
+#else
 	return msm_camio_clk_enable(CAMIO_CAM_MCLK_CLK);
+#endif
+
 }
 
 int msm_camio_sensor_clk_off(struct platform_device *pdev)
 {
+
+#if (defined(CONFIG_MACH_AMAZING)|| defined(CONFIG_MACH_KYLE)) && !defined(CONFIG_MACH_KYLE_I)
+	int rc = 0;
+#endif
 	const struct msm_camera_sensor_info *sinfo = pdev->dev.platform_data;
 	struct msm_camera_device_platform_data *camdev = sinfo->pdata;
 	camdev->camera_gpio_off();
+
+#if (defined(CONFIG_MACH_AMAZING)||defined(CONFIG_MACH_KYLE)) && !defined(CONFIG_MACH_KYLE_I)
+return rc;
+#else
 	return msm_camio_clk_disable(CAMIO_CAM_MCLK_CLK);
+#endif
 
 }
 
@@ -438,24 +461,24 @@ void msm_camio_vfe_blk_reset(void)
 	val = readl_relaxed(appbase + 0x00000210);
 	val |= 0x1;
 	writel_relaxed(val, appbase + 0x00000210);
-	usleep_range(10000, 11000);
+	usleep_range(1000, 2000);
 
 	val = readl_relaxed(appbase + 0x00000210);
 	val &= ~0x1;
 	writel_relaxed(val, appbase + 0x00000210);
-	usleep_range(10000, 11000);
+	usleep_range(1000, 2000);
 
 	/* do axi reset */
 	val = readl_relaxed(appbase + 0x00000208);
 	val |= 0x1;
 	writel_relaxed(val, appbase + 0x00000208);
-	usleep_range(10000, 11000);
+	usleep_range(1000, 2000);
 
 	val = readl_relaxed(appbase + 0x00000208);
 	val &= ~0x1;
 	writel_relaxed(val, appbase + 0x00000208);
 	mb();
-	usleep_range(10000, 11000);
+	usleep_range(1000, 2000);
 	return;
 }
 
@@ -470,11 +493,21 @@ int msm_camio_probe_on(struct platform_device *pdev)
 
 	msm_camio_clk_enable(CAMIO_CSI0_PCLK);
 	msm_camio_clk_enable(CAMIO_CSI1_PCLK);
-
+#ifdef CONFIG_MACH_KYLE_I
 	rc = camdev->camera_gpio_on();
-	if (rc < 0)
+	//if (rc < 0) eunice09.kim : Change power sequence
 		return rc;
+	//mdelay(40);
+	//return msm_camio_clk_enable(CAMIO_CAM_MCLK_CLK);
+#else
+	rc = camdev->camera_gpio_on();
+	if (rc < 0) //eunice09.kim : Change power sequence
+		return rc;
+	mdelay(40);
 	return msm_camio_clk_enable(CAMIO_CAM_MCLK_CLK);
+
+#endif
+
 }
 
 int msm_camio_probe_off(struct platform_device *pdev)
@@ -534,9 +567,13 @@ int msm_camio_csi_config(struct msm_camera_csi_params *csi_params)
 		(0x1 << MIPI_PHY_D0_CONTROL2_ERR_SOT_HS_EN_SHFT);
 	CDBG("%s MIPI_PHY_D0_CONTROL2 val=0x%x\n", __func__, val);
 	msm_io_w(val, csibase + MIPI_PHY_D0_CONTROL2);
+#if defined(CONFIG_MACH_KYLE)
 	msm_io_w(val, csibase + MIPI_PHY_D1_CONTROL2);
+#else
+	/*msm_io_w(val, csibase + MIPI_PHY_D1_CONTROL2);
 	msm_io_w(val, csibase + MIPI_PHY_D2_CONTROL2);
-	msm_io_w(val, csibase + MIPI_PHY_D3_CONTROL2);
+	msm_io_w(val, csibase + MIPI_PHY_D3_CONTROL2);*/
+#endif
 
 
 	val = (0x0F << MIPI_PHY_CL_CONTROL_HS_TERM_IMP_SHFT) |

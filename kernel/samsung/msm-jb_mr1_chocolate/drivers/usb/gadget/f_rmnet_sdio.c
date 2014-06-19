@@ -5,7 +5,7 @@
  * Copyright (C) 2003-2004 Robert Schwebel, Benedikt Spranger
  * Copyright (C) 2003 Al Borchers (alborchers@steinerpoint.com)
  * Copyright (C) 2008 Nokia Corporation
- * Copyright (c) 2010-2011, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2010-2011, Code Aurora Forum. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -144,8 +144,13 @@ static struct usb_interface_descriptor rmnet_sdio_interface_desc = {
 	/* .bInterfaceNumber = DYNAMIC */
 	.bNumEndpoints =        3,
 	.bInterfaceClass =      USB_CLASS_VENDOR_SPEC,
+#ifdef CONFIG_USB_ANDROID_SAMSUNG_COMPOSITE
+	.bInterfaceSubClass = 0xE0,
+	.bInterfaceProtocol = 0x00,
+#else
 	.bInterfaceSubClass =   USB_CLASS_VENDOR_SPEC,
 	.bInterfaceProtocol =   USB_CLASS_VENDOR_SPEC,
+#endif
 	/* .iInterface = DYNAMIC */
 };
 
@@ -1256,16 +1261,36 @@ static int rmnet_sdio_set_alt(struct usb_function *f,
 	int ret = 0;
 
 	dev->epin->driver_data = dev;
-	usb_ep_enable(dev->epin, ep_choose(cdev->gadget,
+	ret = usb_ep_enable(dev->epin, ep_choose(cdev->gadget,
 				&rmnet_sdio_hs_in_desc,
 				&rmnet_sdio_fs_in_desc));
+	if (ret) {
+		ERROR(cdev, "can't enable %s, result %d\n",
+					dev->epin->name, ret);
+		return ret;
+	}
+
 	dev->epout->driver_data = dev;
-	usb_ep_enable(dev->epout, ep_choose(cdev->gadget,
+	ret = usb_ep_enable(dev->epout, ep_choose(cdev->gadget,
 				&rmnet_sdio_hs_out_desc,
 				&rmnet_sdio_fs_out_desc));
-	usb_ep_enable(dev->epnotify, ep_choose(cdev->gadget,
+	if (ret) {
+		ERROR(cdev, "can't enable %s, result %d\n",
+					dev->epout->name, ret);
+		usb_ep_disable(dev->epin);
+		return ret;
+	}
+
+	ret = usb_ep_enable(dev->epnotify, ep_choose(cdev->gadget,
 				&rmnet_sdio_hs_notify_desc,
 				&rmnet_sdio_fs_notify_desc));
+	if (ret) {
+		ERROR(cdev, "can't enable %s, result %d\n",
+					dev->epnotify->name, ret);
+		usb_ep_disable(dev->epin);
+		usb_ep_disable(dev->epout);
+		return ret;
+	}
 
 	/* allocate notification */
 	dev->notify_req = rmnet_sdio_alloc_req(dev->epnotify,

@@ -2,7 +2,7 @@
  *  linux/drivers/mmc/host/msmsdcc.h - QCT MSM7K SDC Controller
  *
  *  Copyright (C) 2008 Google, All Rights Reserved.
- *  Copyright (c) 2009-2011, The Linux Foundation. All rights reserved.
+ *  Copyright (c) 2009-2011, Code Aurora Forum. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -210,7 +210,7 @@
 
 #define NR_SG		128
 
-#define MSM_MMC_DEFAULT_IDLE_TIMEOUT	5000 /* msecs */
+#define MSM_MMC_IDLE_TIMEOUT	5000 /* msecs */
 
 /*
  * Set the request timeout to 10secs to allow
@@ -218,6 +218,8 @@
  */
 #define MSM_MMC_REQ_TIMEOUT	10000 /* msecs */
 #define MSM_MMC_DISABLE_TIMEOUT        200 /* msecs */
+
+extern struct class *sec_class;	/* Sysfs about SD Card Detection */
 
 /*
  * Controller HW limitations

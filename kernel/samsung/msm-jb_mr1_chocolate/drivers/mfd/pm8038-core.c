@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2011, Code Aurora Forum. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -478,6 +478,17 @@ bail:
 	}
 	return ret;
 }
+
+static const char * const pm8038_restart_reason[] = {
+	[0] = "Unknown",
+	[1] = "Triggered from CBL (external charger)",
+	[2] = "Triggered from KPD (power key press)",
+	[3] = "Triggered from CHG (usb charger insertion)",
+	[4] = "Triggered from SMPL (sudden momentary power loss)",
+	[5] = "Triggered from RTC (real time clock)",
+	[6] = "Triggered by Hard Reset",
+	[7] = "Triggered by General Purpose Trigger",
+};
 
 static const char * const pm8038_restart_reason[] = {
 	[0] = "Unknown",

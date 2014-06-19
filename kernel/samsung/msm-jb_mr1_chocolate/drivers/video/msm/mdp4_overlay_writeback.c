@@ -1,4 +1,4 @@
-/* Copyright (c) 2011-2012, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2011-2012, Code Aurora Forum. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -150,14 +150,11 @@ int mdp4_overlay_writeback_on(struct platform_device *pdev)
 	}
 
 	ret = panel_next_on(pdev);
-
 	/* MDP_LAYERMIXER_WB_MUX_SEL to use mixer1 axi for mixer2 writeback */
-	if (hdmi_prim_display)
-		data = 0x01;
-	else
-		data = 0x02;
+	data = inpdw(MDP_BASE + 0x100F4);
+	data &= ~0x02; /* clear the mixer1 mux bit */
+	data |= 0x02;
 	outpdw(MDP_BASE + 0x100F4, data);
-
 	MDP_OUTP(MDP_BASE + MDP4_OVERLAYPROC1_BASE + 0x5004,
 		((0x0 & 0xFFF) << 16) | /* 12-bit B */
 			(0x0 & 0xFFF));         /* 12-bit G */

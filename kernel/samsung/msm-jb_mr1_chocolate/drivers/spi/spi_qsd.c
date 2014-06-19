@@ -1,4 +1,4 @@
-/* Copyright (c) 2008-2011, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2008-2011, Code Aurora Forum. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -2314,6 +2314,10 @@ skip_dma_resources:
 	if (rc)
 		goto err_probe_gpio;
 
+	rc = msm_spi_request_gpios(dd);
+	if (rc)
+		goto err_probe_gpio;
+
 	spin_lock_init(&dd->queue_lock);
 	mutex_init(&dd->core_lock);
 	INIT_LIST_HEAD(&dd->queue);
@@ -2424,6 +2428,7 @@ skip_dma_resources:
 	clk_enabled = 0;
 	pclk_enabled = 0;
 
+	BUG_ON(msm_spi_request_gpios(dd) != 0);
 	dd->suspended = 0;
 	dd->transfer_pending = 0;
 	dd->multi_xfr = 0;

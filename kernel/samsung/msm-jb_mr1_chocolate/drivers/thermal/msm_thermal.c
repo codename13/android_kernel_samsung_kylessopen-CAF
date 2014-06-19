@@ -1,4 +1,4 @@
-/* Copyright (c) 2012, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012, Code Aurora Forum. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -91,6 +91,16 @@ static void check_temp(struct work_struct *work)
 					 "already < allowed_max_freq\n", cpu);
 			}
 		} else if (temp < allowed_max_low) {
+#ifdef CONFIG_SEC_DVFS
+			if (cpufreq_get_dvfs_state() != 1) {
+				if (cpu_policy->max
+					< cpu_policy->cpuinfo.max_freq) {
+					max_freq = cpu_policy->cpuinfo.max_freq;
+					update_policy = 1;
+				}
+			} else
+				update_policy = 0;
+#else
 			if (cpu_policy->max < cpu_policy->cpuinfo.max_freq) {
 				max_freq = cpu_policy->cpuinfo.max_freq;
 				update_policy = 1;
@@ -98,6 +108,7 @@ static void check_temp(struct work_struct *work)
 				pr_debug("msm_thermal: policy max for cpu %d "
 					 "already at max allowed\n", cpu);
 			}
+#endif
 		}
 
 		if (update_policy)

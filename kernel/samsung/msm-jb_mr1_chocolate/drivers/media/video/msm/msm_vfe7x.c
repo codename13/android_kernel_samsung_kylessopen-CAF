@@ -1,4 +1,4 @@
-/* Copyright (c) 2009-2012, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2009-2012, Code Aurora Forum. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -784,3 +784,4 @@ void msm_camvpe_fn_init(struct msm_camvpe_fn *fptr, void *data)
 	fptr->vpe_cfg_update	= NULL;
 	fptr->dis		= NULL;
 }
+

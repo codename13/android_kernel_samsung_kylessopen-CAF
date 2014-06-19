@@ -753,6 +753,17 @@ static const char * const pm8921_restart_reason[] = {
 	[7] = "Triggered by General Purpose Trigger",
 };
 
+static const char * const pm8921_restart_reason[] = {
+	[0] = "Unknown",
+	[1] = "Triggered from CBL (external charger)",
+	[2] = "Triggered from KPD (power key press)",
+	[3] = "Triggered from CHG (usb charger insertion)",
+	[4] = "Triggered from SMPL (sudden momentary power loss)",
+	[5] = "Triggered from RTC (real time clock)",
+	[6] = "Triggered by Hard Reset",
+	[7] = "Triggered by General Purpose Trigger",
+};
+
 static const char * const pm8921_rev_names[] = {
 	[PM8XXX_REVISION_8921_TEST]	= "test",
 	[PM8XXX_REVISION_8921_1p0]	= "1.0",

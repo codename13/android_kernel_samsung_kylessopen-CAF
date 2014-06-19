@@ -1,4 +1,4 @@
-/* Copyright (c) 2008-2012, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2008-2012, Code Aurora Forum. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -387,7 +387,11 @@ void mipi_dsi_clk_enable(void)
 	mb();
 
 	clk_set_rate(dsi_byte_div_clk, data);
+#if defined(CONFIG_MACH_KYLE)
+	clk_set_rate(dsi_esc_clk, 1 << 24 | 0 << 16 | 0 << 8 | 0 );
+#else
 	clk_set_rate(dsi_esc_clk, data);
+#endif
 	clk_enable(mdp_dsi_pclk);
 	clk_enable(dsi_byte_div_clk);
 	clk_enable(dsi_esc_clk);

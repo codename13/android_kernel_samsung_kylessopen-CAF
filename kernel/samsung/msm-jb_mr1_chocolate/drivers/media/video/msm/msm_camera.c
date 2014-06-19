@@ -54,7 +54,7 @@ static LIST_HEAD(msm_sensors);
 struct  msm_control_device *g_v4l2_control_device;
 int g_v4l2_opencnt;
 static int camera_node;
-static enum msm_camera_type camera_type[MSM_MAX_CAMERA_SENSORS];
+static enum msm_camera_type *camera_type[MSM_MAX_CAMERA_SENSORS];
 static uint32_t sensor_mount_angle[MSM_MAX_CAMERA_SENSORS];
 
 struct ion_client *client_for_ion;
@@ -1992,6 +1992,8 @@ static int msm_frame_axi_cfg(struct msm_sync *sync,
 static int msm_get_sensor_info(struct msm_sync *sync, void __user *arg)
 {
 	int rc = 0;
+	int BACK_CAMERA_3D = 0;
+	int s_camera_type = 0;
 	struct msm_camsensor_info info;
 	struct msm_camera_sensor_info *sdata;
 
@@ -2028,6 +2030,9 @@ static int msm_get_camera_info(void __user *arg)
 {
 	int rc = 0;
 	int i = 0;
+	int BACK_CAMERA_3D = 0;
+	int BACK_CAMERA_2D = 0;
+	int FRONT_CAMERA_2D = 0;
 	struct msm_camera_info info;
 
 	if (copy_from_user(&info, arg, sizeof(struct msm_camera_info))) {

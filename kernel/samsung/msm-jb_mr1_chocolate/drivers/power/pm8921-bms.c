@@ -1,4 +1,4 @@
-/* Copyright (c) 2011-2012, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2011-2012, Code Aurora Forum. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -62,6 +62,16 @@ struct pm8921_soc_params {
 	int		cc;
 
 	int		last_good_ocv_uv;
+};
+
+struct pm8921_rbatt_params {
+	uint16_t	ocv_for_rbatt_raw;
+	uint16_t	vsense_for_rbatt_raw;
+	uint16_t	vbatt_for_rbatt_raw;
+
+	int		ocv_for_rbatt_uv;
+	int		vsense_for_rbatt_uv;
+	int		vbatt_for_rbatt_uv;
 };
 
 struct pm8921_rbatt_params {
@@ -809,6 +819,11 @@ int pm8921_bms_get_simultaneous_battery_voltage_and_current(int *ibat_ua,
 		return -EINVAL;
 	}
 
+	if (the_chip == NULL) {
+		pr_err("Called to early\n");
+		return -EINVAL;
+	}
+
 	mutex_lock(&the_chip->bms_output_lock);
 
 	pm8xxx_writeb(the_chip->dev->parent, BMS_S1_DELAY, 0x00);
@@ -861,6 +876,42 @@ static int read_rbatt_params_raw(struct pm8921_bms_chip *chip,
 	convert_vbatt_raw_to_uv(chip,
 			raw->ocv_for_rbatt_raw, &raw->ocv_for_rbatt_uv);
 
+	convert_vsense_to_uv(chip, raw->vsense_for_rbatt_raw,
+					&raw->vsense_for_rbatt_uv);
+
+	pr_debug("vbatt_for_rbatt_raw = 0x%x, vbatt_for_rbatt= %duV\n",
+			raw->vbatt_for_rbatt_raw, raw->vbatt_for_rbatt_uv);
+	pr_debug("ocv_for_rbatt_raw = 0x%x, ocv_for_rbatt= %duV\n",
+			raw->ocv_for_rbatt_raw, raw->ocv_for_rbatt_uv);
+	pr_debug("vsense_for_rbatt_raw = 0x%x, vsense_for_rbatt= %duV\n",
+			raw->vsense_for_rbatt_raw, raw->vsense_for_rbatt_uv);
+	return 0;
+}
+EXPORT_SYMBOL(pm8921_bms_get_simultaneous_battery_voltage_and_current);
+
+static int read_rbatt_params_raw(struct pm8921_bms_chip *chip,
+				struct pm8921_rbatt_params *raw)
+{
+	int usb_chg;
+
+	mutex_lock(&chip->bms_output_lock);
+	pm_bms_lock_output_data(chip);
+
+	pm_bms_read_output_data(chip,
+			OCV_FOR_RBATT, &raw->ocv_for_rbatt_raw);
+	pm_bms_read_output_data(chip,
+			VBATT_FOR_RBATT, &raw->vbatt_for_rbatt_raw);
+	pm_bms_read_output_data(chip,
+			VSENSE_FOR_RBATT, &raw->vsense_for_rbatt_raw);
+
+	pm_bms_unlock_output_data(chip);
+	mutex_unlock(&chip->bms_output_lock);
+
+	usb_chg = usb_chg_plugged_in();
+	convert_vbatt_raw_to_uv(chip, usb_chg,
+			raw->vbatt_for_rbatt_raw, &raw->vbatt_for_rbatt_uv);
+	convert_vbatt_raw_to_uv(chip, usb_chg,
+			raw->ocv_for_rbatt_raw, &raw->ocv_for_rbatt_uv);
 	convert_vsense_to_uv(chip, raw->vsense_for_rbatt_raw,
 					&raw->vsense_for_rbatt_uv);
 
@@ -930,6 +981,27 @@ static int calculate_rbatt_resume(struct pm8921_bms_chip *chip,
 	if (raw->ocv_for_rbatt_uv == 0
 		|| raw->ocv_for_rbatt_uv == raw->vbatt_for_rbatt_uv
 		|| raw->vsense_for_rbatt_raw == 0) {
+		pr_debug("rbatt readings unavailable ocv = %d, vbatt = %d,"
+					"vsen = %d\n",
+					raw->ocv_for_rbatt_uv,
+					raw->vbatt_for_rbatt_uv,
+					raw->vsense_for_rbatt_raw);
+		return -EINVAL;
+	}
+	r_batt = ((raw->ocv_for_rbatt_uv - raw->vbatt_for_rbatt_uv)
+			* chip->r_sense) / raw->vsense_for_rbatt_uv;
+	pr_debug("r_batt = %umilliOhms", r_batt);
+	return r_batt;
+}
+
+static int calculate_rbatt_resume(struct pm8921_bms_chip *chip,
+				struct pm8921_rbatt_params *raw)
+{
+	unsigned int  r_batt;
+
+	if (raw->ocv_for_rbatt_uv <= 0
+		|| raw->ocv_for_rbatt_uv <= raw->vbatt_for_rbatt_uv
+		|| raw->vsense_for_rbatt_raw <= 0) {
 		pr_debug("rbatt readings unavailable ocv = %d, vbatt = %d,"
 					"vsen = %d\n",
 					raw->ocv_for_rbatt_uv,
@@ -1871,6 +1943,15 @@ static int get_reading(void *data, u64 * val)
 		break;
 	case LAST_GOOD_OCV_VALUE:
 		*val = raw.last_good_ocv_uv;
+		break;
+	case VBATT_FOR_RBATT:
+		*val = rraw.vbatt_for_rbatt_uv;
+		break;
+	case VSENSE_FOR_RBATT:
+		*val = rraw.vsense_for_rbatt_uv;
+		break;
+	case OCV_FOR_RBATT:
+		*val = rraw.ocv_for_rbatt_uv;
 		break;
 	case VBATT_FOR_RBATT:
 		*val = rraw.vbatt_for_rbatt_uv;

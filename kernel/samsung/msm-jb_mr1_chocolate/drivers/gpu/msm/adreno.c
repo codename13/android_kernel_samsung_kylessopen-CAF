@@ -1,4 +1,4 @@
-/* Copyright (c) 2002,2007-2012, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2002,2007-2012, Code Aurora Forum. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -452,6 +452,8 @@ adreno_probe(struct platform_device *pdev)
 	int status = -EINVAL;
 
 	device = (struct kgsl_device *)pdev->id_entry->driver_data;
+	if (device == NULL)
+		return status;
 	adreno_dev = ADRENO_DEVICE(device);
 	device->parentdev = &pdev->dev;
 
@@ -567,13 +569,17 @@ static int adreno_start(struct kgsl_device *device, unsigned int init_ram)
 
 	if (cpu_is_msm8960() || cpu_is_msm8930())
 		adreno_regwrite(device, REG_RBBM_PM_OVERRIDE1, 0x200);
+	else if (adreno_is_a200(adreno_dev))
+		adreno_regwrite(device, REG_RBBM_PM_OVERRIDE1, 0xFDC001E0);
 	else
 		adreno_regwrite(device, REG_RBBM_PM_OVERRIDE1, 0);
 
-	if (!adreno_is_a22x(adreno_dev))
-		adreno_regwrite(device, REG_RBBM_PM_OVERRIDE2, 0);
+	if (adreno_is_a22x(adreno_dev))
+ 		adreno_regwrite(device, REG_RBBM_PM_OVERRIDE2, 0x80);
+	else if (adreno_is_a200(adreno_dev))
+	        adreno_regwrite(device, REG_RBBM_PM_OVERRIDE2, 0x38);
 	else
-		adreno_regwrite(device, REG_RBBM_PM_OVERRIDE2, 0x80);
+		adreno_regwrite(device, REG_RBBM_PM_OVERRIDE2, 0x0);
 
 	kgsl_sharedmem_set(&device->memstore, 0, 0, device->memstore.size);
 

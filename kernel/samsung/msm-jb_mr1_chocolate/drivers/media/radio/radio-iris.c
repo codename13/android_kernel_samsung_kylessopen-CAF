@@ -1,4 +1,4 @@
-/* Copyright (c) 2011-2012, The Linux Foundation. All rights reserved
+/* Copyright (c) 2011-2012, Code Aurora Forum. All rights reserved
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -1588,8 +1588,8 @@ static void hci_cc_fm_disable_rsp(struct radio_hci_dev *hdev,
 
 	if (status)
 		return;
-	if (radio->mode != FM_CALIB)
-		iris_q_event(radio, IRIS_EVT_RADIO_DISABLED);
+
+	iris_q_event(radio, IRIS_EVT_RADIO_DISABLED);
 
 	radio_hci_req_complete(hdev, status);
 }
@@ -1627,8 +1627,8 @@ static void hci_cc_fm_enable_rsp(struct radio_hci_dev *hdev,
 
 	if (rsp->status)
 		return;
-	if (radio->mode != FM_CALIB)
-		iris_q_event(radio, IRIS_EVT_RADIO_READY);
+
+	iris_q_event(radio, IRIS_EVT_RADIO_READY);
 
 	radio_hci_req_complete(hdev, rsp->status);
 }
@@ -2461,26 +2461,22 @@ static int iris_do_calibration(struct iris_device *radio)
 	int retval = 0x00;
 
 	cal_mode = PROCS_CALIB_MODE;
-	radio->mode = FM_CALIB;
 	retval = hci_cmd(HCI_FM_ENABLE_RECV_CMD,
 			radio->fm_hdev);
 	if (retval < 0) {
 		FMDERR("Enable failed before calibration %x", retval);
-		radio->mode = FM_OFF;
 		return retval;
 	}
 	retval = radio_hci_request(radio->fm_hdev, hci_fm_do_cal_req,
 		(unsigned long)cal_mode, RADIO_HCI_TIMEOUT);
 	if (retval < 0) {
 		FMDERR("Do Process calibration failed %x", retval);
-		radio->mode = FM_RECV;
 		return retval;
 	}
 	retval = hci_cmd(HCI_FM_DISABLE_RECV_CMD,
 			radio->fm_hdev);
 	if (retval < 0)
 		FMDERR("Disable Failed after calibration %d", retval);
-	radio->mode = FM_OFF;
 	return retval;
 }
 static int iris_vidioc_g_ctrl(struct file *file, void *priv,

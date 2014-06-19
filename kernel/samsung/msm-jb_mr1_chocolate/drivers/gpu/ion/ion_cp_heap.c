@@ -34,7 +34,6 @@
  #include "ion_priv.h"
 
 #include <asm/mach/map.h>
-#include <asm/cacheflush.h>
 
 /**
  * struct ion_cp_heap - container for the heap and shared heap data
@@ -67,8 +66,7 @@
  * @reserved_vrange: reserved virtual address range for use with fmem
  * @iommu_map_all:	Indicates whether we should map whole heap into IOMMU.
  * @iommu_2x_map_domain: Indicates the domain to use for overmapping.
- * @has_outer_cache:    set to 1 if outer cache is used, 0 otherwise.
-*/
+ */
 struct ion_cp_heap {
 	struct ion_heap heap;
 	struct gen_pool *pool;
@@ -551,31 +549,25 @@ int ion_cp_cache_ops(struct ion_heap *heap, struct ion_buffer *buffer,
 			void *vaddr, unsigned int offset, unsigned int length,
 			unsigned int cmd)
 {
-	void (*outer_cache_op)(phys_addr_t, phys_addr_t);
-	struct ion_cp_heap *cp_heap =
-	     container_of(heap, struct  ion_cp_heap, heap);
+	unsigned long vstart, pstart;
+
+	pstart = buffer->priv_phys + offset;
+	vstart = (unsigned long)vaddr;
 
 	switch (cmd) {
 	case ION_IOC_CLEAN_CACHES:
-		dmac_clean_range(vaddr, vaddr + length);
-		outer_cache_op = outer_clean_range;
+		clean_caches(vstart, length, pstart);
 		break;
 	case ION_IOC_INV_CACHES:
-		dmac_inv_range(vaddr, vaddr + length);
-		outer_cache_op = outer_inv_range;
+		invalidate_caches(vstart, length, pstart);
 		break;
 	case ION_IOC_CLEAN_INV_CACHES:
-		dmac_flush_range(vaddr, vaddr + length);
-		outer_cache_op = outer_flush_range;
+		clean_and_invalidate_caches(vstart, length, pstart);
 		break;
 	default:
 		return -EINVAL;
 	}
 
-	if (cp_heap->has_outer_cache) {
-		unsigned long pstart = buffer->priv_phys + offset;
-		outer_cache_op(pstart, pstart + length);
-	}
 	return 0;
 }
 

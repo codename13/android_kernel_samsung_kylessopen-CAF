@@ -2509,11 +2509,13 @@ static int mdp4_read_pcc_regs(uint32_t offset,
 
 #define MDP_PCC_OFFSET 0xA000
 #define MDP_DMA_GC_OFFSET 0x8800
-#define MDP_LM_GC_OFFSET 0x4800
+#define MDP_LM_0_GC_OFFSET 0x4800
+#define MDP_LM_1_GC_OFFSET 0x4880
+
 
 #define MDP_DMA_P_OP_MODE_OFFSET 0x70
 #define MDP_DMA_S_OP_MODE_OFFSET 0x28
-#define MDP_LM_OP_MODE_OFFSET 0x14
+#define MDP_LM_OP_MODE_OFFSET 0x10
 
 #define DMA_PCC_R2_OFFSET 0x100
 

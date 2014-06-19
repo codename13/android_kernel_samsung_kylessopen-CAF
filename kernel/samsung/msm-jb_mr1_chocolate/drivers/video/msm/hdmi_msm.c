@@ -1,4 +1,4 @@
-/* Copyright (c) 2010-2012, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2010-2012, Code Aurora Forum. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -1258,8 +1258,7 @@ void hdmi_msm_set_mode(boolean power_on)
 
 	/* HDMI_CTRL */
 	HDMI_OUTP(0x0000, reg_val);
-	DEV_DBG("HDMI Core: %s, HDMI_CTRL=0x%08x\n",
-			power_on ? "Enable" : "Disable", reg_val);
+	DEV_DBG("HDMI Core: %s\n", power_on ? "Enable" : "Disable");
 }
 
 static void msm_hdmi_init_ddc(void)
@@ -4083,6 +4082,7 @@ int hdmi_msm_clk(int on)
 
 static void hdmi_msm_turn_on(void)
 {
+	uint32 hpd_ctrl;
 	uint32 audio_pkt_ctrl, audio_cfg;
 	/*
 	 * Number of wait iterations for QDSP to disable Audio Engine
@@ -4105,7 +4105,6 @@ static void hdmi_msm_turn_on(void)
 		msleep(20);
 	}
 
-	hdmi_msm_set_mode(FALSE);
 	mutex_lock(&hdcp_auth_state_mutex);
 	hdmi_msm_reset_core();
 	mutex_unlock(&hdcp_auth_state_mutex);
@@ -4386,6 +4385,8 @@ static int hdmi_msm_power_on(struct platform_device *pdev)
  */
 static int hdmi_msm_power_off(struct platform_device *pdev)
 {
+	struct msm_fb_data_type *mfd = platform_get_drvdata(pdev);
+
 	if (!hdmi_msm_state->hdmi_app_clk)
 		return -ENODEV;
 
@@ -4589,6 +4590,8 @@ static int __devinit hdmi_msm_probe(struct platform_device *pdev)
 	}
 
 	hdmi_msm_config_hdcp_feature();
+
+	queue_work(hdmi_work_queue, &hdmi_msm_state->hpd_read_work);
 
 	/* Initialize hdmi node and register with switch driver */
 	if (hdmi_prim_display)

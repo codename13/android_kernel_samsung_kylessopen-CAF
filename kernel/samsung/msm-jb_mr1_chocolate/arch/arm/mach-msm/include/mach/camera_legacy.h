@@ -19,11 +19,13 @@
 #include <linux/cdev.h>
 #include <linux/platform_device.h>
 #include <linux/pm_qos.h>
+#include <linux/wakelock.h>
 #include <linux/pm_qos_params.h>
 #include "linux/types.h"
 
 #include <mach/board.h>
 #include <media/msm_camera.h>
+#include <mach/msm_subsystem_map.h>
 
 /*#define CONFIG_MSM_CAMERA_DEBUG*/
 #ifdef CONFIG_MSM_CAMERA_DEBUG
@@ -148,6 +150,12 @@ struct msm_ispif_params {
 	uint16_t cid_mask;
 	uint8_t csid;
 };
+
+struct msm_ispif_params_list {
+	uint32_t len;
+	struct msm_ispif_params params[3];
+};
+
 struct msm_vpe_phy_info {
 	uint32_t sbuf_phy;
 	uint32_t y_phy;
@@ -185,6 +193,8 @@ struct msm_camera_csiphy_params {
 #define VFE31_OUTPUT_MODE_T (0x1 << 4)
 
 #define CSI_EMBED_DATA 0x12
+#define CSI_RESERVED_DATA_0 0x13
+#define CSI_YUV422_8  0x1E
 #define CSI_RAW8    0x2A
 #define CSI_RAW10   0x2B
 #define CSI_RAW12   0x2C
@@ -192,6 +202,7 @@ struct msm_camera_csiphy_params {
 #define CSI_DECODE_6BIT 0
 #define CSI_DECODE_8BIT 1
 #define CSI_DECODE_10BIT 2
+#define CSI_DECODE_DPCM_10_8_10 5
 #define VFE32_OUTPUT_MODE_PT (0x1 << 0)
 #define VFE32_OUTPUT_MODE_S (0x1 << 1)
 #define VFE32_OUTPUT_MODE_V (0x1 << 2)
@@ -299,6 +310,8 @@ struct msm_camvpe_fn {
 };
 
 struct msm_sensor_ctrl {
+
+	int (*s_power) (int enable);	//eunice09.kim change camera power sequence
 	int (*s_init)(const struct msm_camera_sensor_info *);
 	int (*s_release)(void);
 	int (*s_config)(void __user *);
@@ -308,6 +321,15 @@ struct msm_sensor_ctrl {
 	enum msm_st_frame_packing s_video_packing;
 	enum msm_st_frame_packing s_snap_packing;
 };
+
+struct msm_actuator_ctrl {
+	int (*a_init_table)(void);
+	int (*a_power_up)(void *);
+	int (*a_power_down)(void *);
+	int (*a_create_subdevice)(void *, void *);
+	int (*a_config)(void __user *);
+};
+
 struct msm_strobe_flash_ctrl {
 	int (*strobe_flash_init)
 		(struct msm_camera_sensor_strobe_flash_data *);
@@ -374,6 +396,8 @@ struct msm_sync {
 	struct msm_sensor_ctrl sctrl;
 	struct msm_strobe_flash_ctrl sfctrl;
 	struct pm_qos_request idle_pm_qos;
+	struct msm_actuator_ctrl actctrl;
+	struct wake_lock wake_lock;
 	struct platform_device *pdev;
 	int16_t ignore_qcmd_type;
 	uint8_t ignore_qcmd;
@@ -582,6 +606,17 @@ enum msm_bus_perf_setting {
 	S_STEREO_CAPTURE,
 	S_DEFAULT,
 	S_EXIT
+};
+
+enum msm_cam_mode {
+	MODE_R,
+	MODE_L,
+	MODE_DUAL
+};
+
+struct msm_cam_clk_info {
+	const char *clk_name;
+	long clk_rate;
 };
 
 int msm_camio_enable(struct platform_device *dev);

@@ -1,4 +1,4 @@
-/* Copyright (c) 2011-2012, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2011-2012, Code Aurora Forum. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -147,7 +147,7 @@ static int wfd_allocate_ion_buffer(struct ion_client *client,
 		bool secure, struct mem_region *mregion)
 {
 	struct ion_handle *handle;
-	void *kvaddr = NULL, *phys_addr = NULL;
+	void *kvaddr, *phys_addr;
 	unsigned long size;
 	unsigned int alloc_regions = 0;
 	int rc;
@@ -193,9 +193,7 @@ static int wfd_allocate_ion_buffer(struct ion_client *client,
 	return rc;
 alloc_fail:
 	if (!IS_ERR_OR_NULL(handle)) {
-		if (!IS_ERR_OR_NULL(kvaddr))
-			ion_unmap_kernel(client, handle);
-
+		ion_unmap_kernel(client, handle);
 		ion_free(client, handle);
 
 		mregion->kvaddr = NULL;
@@ -607,10 +605,6 @@ int wfd_vidbuf_stop_streaming(struct vb2_queue *q)
 		WFD_MSG_ERR("Failed to stop VSG\n");
 
 	kthread_stop(inst->mdp_task);
-	rc = v4l2_subdev_call(&wfd_dev->enc_sdev, core, ioctl,
-			ENCODE_FLUSH, (void *)inst->venc_inst);
-	if (rc)
-		WFD_MSG_ERR("Failed to flush encoder\n");
 	WFD_MSG_DBG("enc stop\n");
 	rc = v4l2_subdev_call(&wfd_dev->enc_sdev, core, ioctl,
 			ENCODE_STOP, (void *)inst->venc_inst);
@@ -1215,10 +1209,7 @@ static int wfd_open(struct file *filp)
 
 	WFD_MSG_DBG("wfd_open: E\n");
 	wfd_dev = video_drvdata(filp);
-	if (!wfd_dev) {
-		rc = -EINVAL;
-		goto err_dev_busy;
-	}
+
 	mutex_lock(&wfd_dev->dev_lock);
 	if (wfd_dev->in_use) {
 		WFD_MSG_ERR("Device already in use.\n");
@@ -1231,7 +1222,7 @@ static int wfd_open(struct file *filp)
 	mutex_unlock(&wfd_dev->dev_lock);
 
 	inst = kzalloc(sizeof(struct wfd_inst), GFP_KERNEL);
-	if (!inst) {
+	if (!inst || !wfd_dev) {
 		WFD_MSG_ERR("Could not allocate memory for "
 			"wfd instance\n");
 		rc = -ENOMEM;
@@ -1286,9 +1277,6 @@ err_venc:
 	v4l2_subdev_call(&wfd_dev->mdp_sdev, core, ioctl,
 				MDP_CLOSE, (void *)inst->mdp_inst);
 err_mdp_open:
-	mutex_lock(&wfd_dev->dev_lock);
-	wfd_dev->in_use = false;
-	mutex_unlock(&wfd_dev->dev_lock);
 	kfree(inst);
 err_dev_busy:
 	return rc;

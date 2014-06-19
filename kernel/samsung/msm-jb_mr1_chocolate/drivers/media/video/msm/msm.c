@@ -1,4 +1,4 @@
-/* Copyright (c) 2011-2012, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2011-2012, Code Aurora Forum. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -174,7 +174,7 @@ static int msm_server_control(struct msm_cam_server_dev *server_dev,
 	D("Waiting for config status\n");
 	rc = wait_event_interruptible_timeout(queue->wait,
 		!list_empty_careful(&queue->list),
-		msecs_to_jiffies(out->timeout_ms));
+		out->timeout_ms);
 	D("Waiting is over for config status\n");
 	if (list_empty_careful(&queue->list)) {
 		if (!rc)

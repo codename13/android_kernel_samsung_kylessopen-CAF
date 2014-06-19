@@ -20,6 +20,15 @@
 
 #include "rtc-core.h"
 
+#if defined(CONFIG_MACH_KYLE) || defined(CONFIG_MACH_KYLE_I)
+#define ADJUST_KERNEL_TIME
+#endif
+
+#ifdef ADJUST_KERNEL_TIME
+#define RTC_WORK_CHECK_TIMEOUT (30 * 60 * HZ)
+static int rtc_work_check();
+static DECLARE_DELAYED_WORK(rtc_work, rtc_work_check);
+#endif
 
 static DEFINE_IDR(rtc_idr);
 static DEFINE_MUTEX(idr_lock);
@@ -89,6 +98,10 @@ static int rtc_resume(struct device *dev)
 
 	if (strcmp(dev_name(&rtc->dev), CONFIG_RTC_HCTOSYS_DEVICE) != 0)
 		return 0;
+
+#if defined(CONFIG_MACH_KYLE) || defined(CONFIG_MACH_KYLE_I) || defined(CONFIG_MACH_KYLE_CHN)
+	printk("%s [RTC] ==================================== \n", __func__);
+#endif
 
 	/* snapshot the current rtc and system time at resume */
 	getnstimeofday(&new_system);
@@ -270,6 +283,10 @@ static int __init rtc_init(void)
 	rtc_class->resume = rtc_resume;
 	rtc_dev_init();
 	rtc_sysfs_init(rtc_class);
+
+#ifdef ADJUST_KERNEL_TIME
+	schedule_delayed_work(&rtc_work, RTC_WORK_CHECK_TIMEOUT);
+#endif
 	return 0;
 }
 

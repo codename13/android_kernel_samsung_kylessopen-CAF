@@ -1,7 +1,7 @@
 /* drivers/video/msm/mdp_lcdc.c
  *
  * Copyright (c) 2009 Google Inc.
- * Copyright (c) 2009 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2009 Code Aurora Forum. All rights reserved.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -283,7 +283,6 @@ static int mdp_lcdc_probe(struct platform_device *pdev)
 	struct msm_lcdc_platform_data *pdata = pdev->dev.platform_data;
 	struct mdp_lcdc_info *lcdc;
 	int ret = 0;
-
 	if (!pdata) {
 		pr_err("%s: no LCDC platform data found\n", __func__);
 		return -EINVAL;
